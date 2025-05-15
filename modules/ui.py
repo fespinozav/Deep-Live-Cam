@@ -327,6 +327,9 @@ def create_root(start: Callable[[], None], destroy: Callable[[], None]) -> ctk.C
 
     available_cameras = get_available_cameras()
     camera_indices, camera_names = available_cameras
+    # Print debug info for camera indices and names
+    for idx, name in zip(camera_indices, camera_names):
+        print(f"[DEBUG] Camera index: {idx}, name: {name}")
 
     if not camera_names or camera_names[0] == "No cameras found":
         camera_variable = ctk.StringVar(value="No cameras found")
@@ -348,13 +351,15 @@ def create_root(start: Callable[[], None], destroy: Callable[[], None]) -> ctk.C
         root,
         text=_("Live"),
         cursor="hand2",
-        command=lambda: webcam_preview(
-            root,
-            (
-                camera_indices[camera_names.index(camera_variable.get())]
-                if camera_names and camera_names[0] != "No cameras found"
-                else None
-            ),
+        command=lambda: (
+            print(f"[DEBUG] Cámara seleccionada: {camera_variable.get()}"),
+            webcam_preview(
+                root,
+                next(
+                    (camera_indices[i] for i, name in enumerate(camera_names) if name == camera_variable.get()),
+                    0  # valor por defecto si no encuentra coincidencia
+                ),
+            )
         ),
         state=(
             "normal"
@@ -871,10 +876,16 @@ def get_available_cameras():
 def create_webcam_preview(camera_index: int):
     global preview_label, PREVIEW
 
-    cap = VideoCapturer(camera_index)
-    if not cap.start(PREVIEW_DEFAULT_WIDTH, PREVIEW_DEFAULT_HEIGHT, 60):
-        update_status("Failed to start camera")
+    print(f"[DEBUG] Intentando abrir cámara con índice: {camera_index}")
+    cap = cv2.VideoCapture(camera_index)
+    if not cap.isOpened():
+        print("[DEBUG] No se pudo abrir la cámara directamente con OpenCV.")
+        update_status("Failed to open camera")
         return
+    else:
+        print("[DEBUG] Cámara abierta exitosamente con OpenCV.")
+
+    # El bucle de cv2.imshow() fue eliminado para evitar interferencia con la GUI principal.
 
     preview_label.configure(width=PREVIEW_DEFAULT_WIDTH, height=PREVIEW_DEFAULT_HEIGHT)
     PREVIEW.deiconify()
@@ -887,8 +898,16 @@ def create_webcam_preview(camera_index: int):
     fps = 0
 
     while True:
+        start_time = time.time()
+        timeout = 30  # Timeout in seconds
+        if not PREVIEW.winfo_exists():
+            print("[DEBUG] Ventana PREVIEW ya no existe, saliendo del bucle.")
+            break
+
         ret, frame = cap.read()
         if not ret:
+            print("[ERROR] No se pudo capturar frame desde la cámara.")
+            update_status("Error: No se puede capturar imagen de cámara.")
             break
 
         temp_frame = frame.copy()
@@ -900,7 +919,6 @@ def create_webcam_preview(camera_index: int):
             temp_frame = fit_image_to_size(
                 temp_frame, PREVIEW.winfo_width(), PREVIEW.winfo_height()
             )
-
         else:
             temp_frame = fit_image_to_size(
                 temp_frame, PREVIEW.winfo_width(), PREVIEW.winfo_height()
